@@ -10,4 +10,4 @@ class ProducerConstants:
     """
     Constants for the producer script that generates mock event data
     """
-    EVENT_TOTAL = 10                    # Total number of events to generate
+    EVENT_TOTAL = 100                   # Total number of events to generate

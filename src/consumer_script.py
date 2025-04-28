@@ -6,37 +6,47 @@
             Kinesis stream, processing it, then storing it in the Postgres
             database.
 """
-import json
 from typing import List
+
 import pandas as pd
 
-from src.psql_client import get_connection
 from utilities.logger import setup_logger
-from constants.aws_constants import KinesisConstants
-from constants.psql_constants import PsqlEvents
+from src.helpers.kinesis import KinesisConnector
+from src.helpers.s3 import S3BucketConnector
+from src.db_psql_interface import DatabaseInterface
+from constants.aws_constants import KinesisConstants, S3Constants
+from constants.psql_constants import PsqlRawEvents, PsqlProcessedEvents
+
 
 class Consumer:
     """
     Class to simulate a consumer by reading data from a Kinesis stream
     and processing it.
     """
-    def __init__(self, kinesis_client, s3_client, stream_name, bucket_name):
+    def __init__(self, psql_client: DatabaseInterface):
         """
         Initialize the consumer with the Kinesis client, S3 client, 
             stream name, and bucket name.
         Parameters:
-            kinesis_client (boto3): The Kinesis client
             s3_client (boto3): The S3 client
-            stream_name (str): The name of the Kinesis stream
-            bucket_name (str): The name of the S3 bucket
+            psql_client: Connection to the PostgreSQL Database
         """
         self.logger = setup_logger()
 
-        # Constants necessary for reading from the same mock Kinesis stream
-        self.kinesis = kinesis_client
-        self.s3 = s3_client
-        self.stream_name = stream_name
-        self.bucket_name = bucket_name
+        # Connect to the Kinesis Stream
+        self.kinesis = KinesisConnector(
+            stream_name=KinesisConstants.STREAM_NAME,
+            region=KinesisConstants.REGION_NAME
+        )
+
+        # Connect to the S3 Bucket and create it
+        self.s3 = S3BucketConnector(
+            bucket_name=S3Constants.RAW_EVENTS_BUCKET_NAME
+        )
+        self.s3.create_bucket()
+
+        self.psql = psql_client
+
 
     def read_from_kinesis(self) -> List[dict]:
         """
@@ -46,93 +56,63 @@ class Consumer:
         Returns:
             List[dict]: A list of records fetched from the Kinesis stream
         """
-        # Get the shard iterator and read from the start.
-        shard_iterator = self.kinesis.get_shard_iterator(
-            StreamName=self.stream_name,
-            ShardId=KinesisConstants.SHARD_ID,              # Default shard ID
-            ShardIteratorType=KinesisConstants.SHARD_ITERATOR_TYPE
-        )['ShardIterator']
-
-        # Read records from the Kinesis stream into a list of dictionaries
-        self.logger.info("Reading from Kinesis stream '%s'.", self.stream_name)
-        records = []
-        while True:
-            response = self.kinesis.get_records(
-                    ShardIterator=shard_iterator,
-                    Limit=10
-            )
-
-            # Check if there are any records to process, if not, break the loop
-            if not response['Records']:
-                self.logger.info("No more records to read.")
-                break
-
-            # Load the records into a list of dictionaries
-            for record in response['Records']:
-                payload = json.loads(record['Data'])
-                records.append(payload)
-
-            # Update the shard iterator for the next read
-            shard_iterator = response['NextShardIterator']
-
-        self.logger.info("Received %s records from Kinesis stream '%s'.",
-                         str(len(records)), self.stream_name)
-
-        return records
-
-    def store_in_s3(self, data: dict, key: str = 'stored_data.json'):
-        """
-        Store the processed data in S3.
-
-        Parameters:
-            data (dict): The processed data to be stored
-        """
-        self.logger.info("Storing data in S3 as '%s'.", key)
-        self.s3.put_object(
-            Bucket=self.bucket_name,
-            Key=key,
-            Body=json.dumps(data, indent=4)
+        return self.kinesis.read_from_stream(
+            shard_id=KinesisConstants.SHARD_ID,
+            iter_type=KinesisConstants.SHARD_ITERATOR_TYPE
         )
 
-    def store_in_postgres_batch(self, records: List[dict]):
+
+    def store_raw_events(self, records: List[dict]):
         """
-        Store the event in the PostgreSQL database.
-
-        I tried to write this to be more flexible to possible schema changes.
+        Store the raw events in the PostgreSQL database.
         """
-        conn = get_connection()
-        with conn:
-            with conn.cursor() as cur:
-                columns = PsqlEvents.EVENTS_TABLE_COLUMNS[1:]   # Skip ID column
-                col_names = ', '.join(columns)
-                placeholders = ', '.join(['%s'] * len(columns)) # %s for each column
+        self.psql.store_events(
+            records=records,
+            table_name=PsqlRawEvents.EVENTS_TABLE_NAME,
+            table_columns=PsqlRawEvents.EVENTS_TABLE_COLUMNS
+        )
+        self.logger.info("Raw events stored into '%s'.",
+                         PsqlRawEvents.EVENTS_TABLE_NAME)
 
-                insert_sql = f'''
-                    INSERT INTO {PsqlEvents.EVENTS_TABLE_NAME} ({col_names})
-                    VALUES ({placeholders});
-                '''
 
-                for event in records:
-                    # Safely extract values in column order
-                    values = [event.get(col, None) for col in columns]
-
-                    # Ensure metadata is a JSON String
-                    if 'metadata' in columns:
-                        idx = columns.index('metadata')
-                        values[idx] = json.dumps(values[idx]) \
-                                      if values[idx] else '{}'
-
-                    cur.execute(insert_sql, values)
-
-    def fetch_all_events(self):
+    def store_processed_events(self, df: pd.DataFrame):
         """
-        Retrieve all events from the PostgreSQL database and return them 
-        as a DataFrame.
+        Store the processed events in the PostgreSQL database
+        """
+        self.logger.info("Storing processed events into '%s' table.",
+                    PsqlProcessedEvents.PROC_EVENTS_TABLE_NAME)
+
+        if df.empty:
+            self.logger.warning("The passed DataFrame is empty!")
+            return
+
+        self.psql.db.copy_df_into_table(
+            cursor=self.psql.cursor,
+            df=df,
+            table_name=PsqlProcessedEvents.PROC_EVENTS_TABLE_NAME,
+            append=False
+        )
+        self.psql.save()
+
+        self.logger.info("Events stored into '%s' table.",
+                    PsqlProcessedEvents.PROC_EVENTS_TABLE_NAME)
+
+
+    def store_raw_events_in_s3(self, df: pd.DataFrame):
+        """
+        Stores the passed DataFrame into the S3 Bucket
+
+        Parameters:
+            df (pd.DataFrame): The data (table) to be stored
+        """
+        self.s3.store_df_in_bucket(df, S3Constants.RAW_EVENTS_KEY)
+
+
+    def get_raw_events_from_s3(self) -> pd.DataFrame:
+        """
+        Fetch the raw events from the S3 bucket
 
         Returns:
-            pd.DataFrame: A DataFrame containing all events from the database
+            pd.DataFrame: Contains the data read from the S3 bucket
         """
-        conn = get_connection()
-        df = pd.read_sql("SELECT * FROM events", conn)
-        conn.close()
-        return df
+        return self.s3.load_json_from_s3(S3Constants.RAW_EVENTS_KEY)

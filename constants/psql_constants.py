@@ -13,8 +13,13 @@
                 4. auctions
                 5. users
                 6. events
-          Schemas are also written as dicts to ensure more consistency, and
+        - Schemas are also written as dicts to ensure more consistency, and
             to help make future modifications easier.
+        - Possible TODO: Make the table names and columns more dynamic to allow 
+            for easier table creation and modification.
+            - Currently, the table names are hardcoded in the SQL schema strings
+                and you'll have to adjust the table creation within the
+                /src/psql_client.py file.
 """
 
 # PostgreSQL Constants
@@ -128,7 +133,9 @@ class PsqlAuctions:
     Definest the auctions table in the PostgreSQL database
     """
     AUCT_TABLE_NAME = 'auctions'
-    AUCT_SIZE_LIMIT = 1_000          # Max num records to keep in the table
+    AUCT_SIZE_LIMIT = 1_000             # Max num records to keep in the table
+    AUCT_BID_MIN = 0.01                 # Minimum Bidding Amount
+    AUCT_BID_MAX = 10.00                # Maximum Bidding Amount
     AUCT_TABLE_SCHEMA_DICT = {
         'auction_id': 'SERIAL PRIMARY KEY',
         'ad_id': 'INTEGER REFERENCES ads(ad_id)',                 # Foreign Key
@@ -179,12 +186,12 @@ class PsqlUsers:
         )
 
 
-class PsqlEvents:
+class PsqlRawEvents:
     """
-    Constants for the events table structure
+    Constants for the raw_events table structure
     """
-    EVENTS_TABLE_NAME = 'events'
-    EVENTS_SIZE_LIMIT = 10_000          # Max num records to keep in the table
+    EVENTS_TABLE_NAME = 'raw_events'
+    EVENTS_SIZE_LIMIT = 1_000           # Max num records to keep in the table
     EVENTS_TABLE_SCHEMA_DICT = {
         'event_id': 'SERIAL PRIMARY KEY',
         'event_type': 'TEXT',
@@ -194,6 +201,7 @@ class PsqlEvents:
         'company_id': 'INTEGER REFERENCES companies(company_id)', # Foreign Key
         'auction_id': 'INTEGER REFERENCES auctions(auction_id)',  # Foreign Key
         'device_id': 'INTEGER REFERENCES devices(device_id)',     # Foreign Key
+        'geo_location': 'VARCHAR(2)',
         'metadata': 'JSONB'
     }
     EVENTS_TABLE_COLUMNS = list(EVENTS_TABLE_SCHEMA_DICT.keys())
@@ -214,3 +222,10 @@ class PsqlEvents:
         return ',\n    '.join(
             f'{col} {dtype}' for col, dtype in cls.EVENTS_TABLE_SCHEMA_DICT.items()
         )
+
+
+class PsqlProcessedEvents:
+    """
+    Constants for the processed_events table
+    """
+    PROC_EVENTS_TABLE_NAME = 'processed_events'

@@ -19,13 +19,16 @@ class KinesisConstants:
     Constants for the Kinesis stream
     """
     STREAM_NAME = 'EventStream'
+    REGION_NAME = AWSConstants.REGION_NAME
     SHARD_COUNT = 1
-    SHARD_ID = 'shardId-000000000000'       # Default shard ID
-    SHARD_ITERATOR_TYPE = 'TRIM_HORIZON'    # Read from the start
+    SHARD_ID = 'shardId-000000000000'               # Default shard ID
+    SHARD_ITERATOR_TYPE = 'TRIM_HORIZON'            # Read from the start
 
 
 class S3Constants:
     """
     Constants for the S3 bucket
     """
+    REGION_NAME = AWSConstants.REGION_NAME
     RAW_EVENTS_BUCKET_NAME = 'raw-events-bucket'    # Name of the S3 bucket
+    RAW_EVENTS_KEY = 'raw-events.json'              # Name of the raw-events data
