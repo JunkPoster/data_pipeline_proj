@@ -266,7 +266,8 @@ class DatabaseInterface:
             ad_index = random.randint(0, len(ads) - 1)
             ad_id, company_id = ads[ad_index][0], ads[ad_index][2]
             device_id = random.choice(devices)
-            auction_timestamp = random.randint(1_600_000000, 1_700_000000)  # UNIX
+            # UNIX Timestamp: 04-2025 to 05-2025
+            auction_timestamp = random.randint(1_711_929_600, 1_743_465_600)
             bid_amount = round(random.uniform(
                     PsqlAuctions.AUCT_BID_MIN,
                     PsqlAuctions.AUCT_BID_MAX
@@ -332,7 +333,8 @@ class DatabaseInterface:
             event = {
                 'user_id': random.choice(user_ids),
                 'event_type': random.choice(PsqlRawEvents.EVENT_TYPES),
-                'event_timestamp': random.randint(1_600_000000, 1_700_000000), # UNIX
+                # UNIX Timestamp: 04-2025 to 05-2025
+                'event_timestamp': random.randint(1_711_929_600, 1_743_465_600),
                 'ad_id': ad_ids[auction_index],
                 'company_id': company_ids[auction_index],
                 'auction_id': auction_ids[auction_index],

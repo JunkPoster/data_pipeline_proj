@@ -12,6 +12,7 @@ from utilities.logger import setup_logger
 from src.db_psql_interface import DatabaseInterface
 from constants.psql_constants import PsqlCompanies, PsqlDevices, PsqlAds, \
                                      PsqlAuctions, PsqlUsers
+from constants.helper_constants import TransformerConstants
 
 
 class Transformer:
@@ -40,25 +41,23 @@ class Transformer:
         Returns:
             pd.DataFrame: A DataFrame that's been combined with all tables
         """
-        # Merge with companies
-        df2 = self.psql.get_table_df(PsqlCompanies.COMP_TABLE_NAME)
-        merged = df.merge(df2, on='company_id')
+        merged = df.copy()
 
-        # Merge with devices
-        df2 = self.psql.get_table_df(PsqlDevices.DEV_TABLE_NAME)
-        merged = merged.merge(df2, on='device_id')
+        for table_name, key in [
+            (PsqlCompanies.COMP_TABLE_NAME, 'company_id'),
+            (PsqlDevices.DEV_TABLE_NAME, 'device_id'),
+            (PsqlAds.ADS_TABLE_NAME, 'ad_id'),
+            (PsqlAuctions.AUCT_TABLE_NAME, 'auction_id'),
+            (PsqlUsers.USERS_TABLE_NAME, 'user_id'),
+        ]:
+            # Get the table DataFrame
+            df2 = self.psql.get_table_df(table_name)
 
-        # Merge with ads
-        df2 = self.psql.get_table_df(PsqlAds.ADS_TABLE_NAME)
-        merged = merged.merge(df2, on='ad_id')
+            # Merge with the main DataFrame
+            merged = merged.merge(df2, on=key, suffixes=('', '_drop'))
 
-        # Merge with auctions
-        df2 = self.psql.get_table_df(PsqlAuctions.AUCT_TABLE_NAME)
-        merged = merged.merge(df2, on='auction_id')
-
-        # Merge with users
-        df2 = self.psql.get_table_df(PsqlUsers.USERS_TABLE_NAME)
-        merged = merged.merge(df2, on='user_id')
+            # Drop columns ending with '_drop' to avoid duplicates
+            merged = merged.loc[:, ~merged.columns.str.endswith('_drop')]
 
         return merged
 
@@ -74,7 +73,7 @@ class Transformer:
             pd.DataFrame: A DataFrame of the processed events
         """
         # Ensure tables have already been merged
-        if 'company_id_x' not in df.columns:
+        if 'company_name' not in df.columns:
             df = self.merge_all_tables(df)
 
         # List of columns we want to keep
@@ -94,37 +93,71 @@ class Transformer:
         return cleaned
 
 
-    def report_company_stats(self, df: pd.DataFrame) -> pd.DataFrame:
+    def report_company_stats(self, df: pd.DataFrame, company: str) -> pd.DataFrame:
         """
-        Generates a report based on the total amount spent on bidding per-
-        company, returning it as a DataFrame
+        Generates a report on the passed company's statistics by month.
+        
+        Columns:
+            - month: Month of the year (YYYY-MM)
+            - num_auctions: Total auctions won
+            - num_events: Total events generated
+            - num_users: Total unique users in events
+            - num_ads: Total number of ads in 'ads' table
+            - top_location: Most common geo_location in events
+            - top_device: Most common device_type used in events
+            - top_events: Most common event_type used in events
+            - bid_total: Total spent bidding
+            - avg_dollar_per_event: num_events / bid_total
 
         Parameters:
             df (DataFrame): The DataFrame to perform analytics on
+            company (str): The name of the company to filter by
         Returns:
             pd.DataFrame: A DataFrame containing the processed data
         """
-        # Ensure we're working with cleaned data
-        if 'metadata' in df.columns:
-            df = self.clean_events(df)
+        # Ensure we're working with merged data
+        if 'auction_timestamp' not in df.columns:
+            df = self.merge_all_tables(df)
 
-        # Columns to keep after cleaning
-        keep = ['company', 'bid_amount', 'event_id']
+        # Convert UNIX timestamps to datetime and extract the month (YYYY-MM)
+        df['timestamp'] = pd.to_datetime(df['auction_timestamp'], unit='s')
+        df['month'] = df['timestamp'].dt.to_period('M').astype(str)
 
+        # Filter by company name
+        df = df[df['company_name'] == company]
+        df = df.drop(columns=['company_name'])
+
+        # Columns to keep after merging
+        keep = [
+            'month', 'bid_amount', 'event_id', 'user_id', 'ad_id',
+            'geo_location', 'device_type', 'event_type'
+        ]
+        df = df[keep]
+
+        # Group by month and aggregate the data
         df = (
-            df[keep]
-            .groupby('company', as_index=False)
+            df.groupby('month', as_index=False)
             .agg(
-                bid_total=('bid_amount', 'sum'),
-                total_events=('event_id', 'count')
+                num_auctions=('bid_amount', 'count'),
+                num_events=('event_id', 'count'),
+                num_users=('user_id', 'nunique'),
+                num_ads=('ad_id', 'nunique'),
+                top_location=('geo_location', lambda x: x.mode()[0]),
+                top_device=('device_type', lambda x: x.mode()[0]),
+                top_events=('event_type', lambda x: x.mode()[0]),
+                bid_total=('bid_amount', 'sum')
             )
         )
 
+        # Convert 'bid_total' to numeric instead of string
         df['bid_total'] = pd.to_numeric(df['bid_total'], errors='coerce')
-        df['avg_dollar_per_event'] = df['bid_total'] / df['total_events']
 
-        # Add a currency ($) symbol to this column
+        # Create a new column calculating the average dollar-per-event spent
+        df['avg_dollar_per_event'] = df['bid_total'] / df['num_events']
+
+        # Add a currency ($) symbol to these columns, rounding to .2 decimal places
         df['avg_dollar_per_event'] = df['avg_dollar_per_event'].apply(lambda x: f"${x:,.2f}")
+        df['bid_total'] = df['bid_total'].apply(lambda x: f"${x:,.2f}")
 
         return df
 
@@ -193,3 +226,44 @@ class Transformer:
         )
 
         return interaction_types
+
+
+    def report_revenue(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Reports on the total revenue from auctions, our profit from it, and
+        the total interactions.
+        """
+        # Ensure we're working with all tables
+        if 'company_name' not in df.columns:
+            df = self.merge_all_tables(df)
+
+        # Convert UNIX timestamps to datetime and extract the month (YYYY-MM)
+        df['timestamp'] = pd.to_datetime(df['auction_timestamp'], unit='s')
+        df['month'] = df['timestamp'].dt.to_period('M').astype(str)
+
+        # Columns to keep after merging
+        keep = [
+            'bid_amount', 'event_type', 'month'
+        ]
+
+        df = (
+            df[keep]
+            .groupby('month', as_index = False)
+            .agg(
+                num_auctions=('bid_amount', 'count'),
+                bid_total=('bid_amount', 'sum'),
+                num_events=('event_type', 'count')
+            )
+        )
+
+        # Convert 'bid_total' to numeric from string
+        df['bid_total'] = pd.to_numeric(df['bid_total'], errors='coerce')
+
+        # Create column to show our total revenue, multiplying by our
+        # specified constant value in constants\helper_constants.py
+        df['total_revenue'] = df['bid_total'] * TransformerConstants.AUCTION_FEE
+
+        # Add '$' symbol and round to 2 decimal places
+        df['total_revenue'] = df['total_revenue'].apply(lambda x: f"${x:,.2f}")
+
+        return df

@@ -10,4 +10,11 @@ class ProducerConstants:
     """
     Constants for the producer script that generates mock event data
     """
-    EVENT_TOTAL = 100                   # Total number of events to generate
+    EVENT_TOTAL = 1000                  # Total number of events to generate
+
+
+class TransformerConstants:
+    """
+    Constants for the transformer.py script for generating reports
+    """
+    AUCTION_FEE = 0.10                  # % we take from each transaction
