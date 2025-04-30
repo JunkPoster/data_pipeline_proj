@@ -1,20 +1,16 @@
 """
-    File: isolated_run.py
+    File: run_docker.py
   Author: Ian Featherston
-    Date: 03/26/2025 - Largely rewritten on 04/22/2025
-    Desc: Runs all of the scripts in the project under one process so that
-            the mock data is persistent and can be tested.
-
-            - This version does everything in an isolated environment, and does
-                NOT do real-time data streaming/processing.
+    Date: 04/30/2025
+    Desc: This version is ran when Docker is used to run the project.
 """
 from moto import mock_aws
 
 from utilities.logger import setup_logger
-from src.producer_script import Producer
-from src.consumer_script import Consumer
+from src.producer import Producer
+from src.consumer import Consumer
 from src.transformer import Transformer
-from src.db_psql_interface import DatabaseInterface
+from src.helpers.db_psql_interface import DatabaseInterface
 from src.visualizer import DataframeVisualizer
 
 
@@ -72,20 +68,17 @@ def main():
     report_revenue = transformer.report_revenue(df_all_tables)
     figure = visualize.plot_revenue_over_time(report_revenue)
     visualize.store_report(figure, 'report_revenue-over-time')
-    #visualize.display_all_figures()
-    visualize.close_all_figures()
 
     # Report 2: Detailed Statistics for an sample Company
     sample_company = 'Amazon'
     report_company = transformer.report_company_stats(df_all_tables,
                                                       sample_company)
-    print(report_company)
+    print(sample_company, "'s statisticts: \n", report_company)
     figure = visualize.plot_company_stats(report_company, sample_company)
     visualize.store_report(figure, 'report_company-stats-' + sample_company)
-    visualize.display_all_figures()
-    visualize.close_all_figures()
 
     db.exit()
+
 
 if __name__ == '__main__':
     main()

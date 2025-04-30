@@ -21,18 +21,23 @@
                 and you'll have to adjust the table creation within the
                 /src/psql_client.py file.
 """
+import os
+from dotenv import load_dotenv      # To read from our '.env' file
+
 
 # PostgreSQL Constants
 class PsqlClient:
     """
     Constants for the PostgreSQL database connection
     """
+    load_dotenv()
+
     # Database connection parameters
-    DB_NAME = 'ad_auctions_db'
-    DB_USER = 'postgres'
-    DB_PASSWORD = 'your-password'   # Replace with your actual password
-    DB_HOST = 'localhost'
-    DB_PORT = '5432'
+    DB_NAME = os.getenv("POSTGRES_DB")
+    DB_USER = os.getenv("POSTGRES_USER")
+    DB_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+    DB_HOST = os.getenv("POSTGRES_HOST", "db")
+    DB_PORT = 5432
 
 
 class PsqlCompanies:

@@ -24,24 +24,28 @@ class DatabaseInterface:
     Class to interface with our PostgreSQL server and perform tasks specific
     to our database parameters and such.e
     """
-    def __init__(self):
+    def __init__(self, host_name: str = PsqlClient.DB_HOST):
         """
         Initializes our DatabaseInterface class with our base parameters
         """
         self.logger = setup_logger()
         self.faker = Faker()
 
-        self.dbname = PsqlClient.DB_NAME
+        self.dbname = PsqlClient.DB_HOST
         self.user = PsqlClient.DB_USER
         self.password = PsqlClient.DB_PASSWORD
-        self.host = PsqlClient.DB_HOST
+        self.host = host_name
         self.port = PsqlClient.DB_PORT
 
-        self.db = PsqlConnector(self.dbname, self.user, self.password,
-                                self.host, self.port)
+        self.db = PsqlConnector(
+            in_dbname=self.dbname,
+            in_user=self.user,
+            in_password=self.password,
+            in_host=self.host,
+            in_port=self.port)
 
-        self.conn = self.db.get_connection()
-        self.cursor = self.conn.cursor()
+        self.conn = None
+        self.cursor = None
 
 
     def save(self):
@@ -121,10 +125,13 @@ class DatabaseInterface:
         """
         self.db.init_db(self.dbname, self.user, self.password,
                         self.host, self.port)
+        self.conn = self.db.get_connection()
+        self.cursor = self.conn.cursor()
         self.save()
-        self.initialize_tables()
 
+        self.initialize_tables()
         self.save()
+
         self.populate_tables()
 
 

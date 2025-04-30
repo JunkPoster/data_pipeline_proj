@@ -9,7 +9,7 @@
 import pandas as pd
 
 from utilities.logger import setup_logger
-from src.db_psql_interface import DatabaseInterface
+from src.helpers.db_psql_interface import DatabaseInterface
 from constants.psql_constants import PsqlCompanies, PsqlDevices, PsqlAds, \
                                      PsqlAuctions, PsqlUsers
 from constants.helper_constants import TransformerConstants

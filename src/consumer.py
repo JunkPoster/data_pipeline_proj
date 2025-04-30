@@ -13,7 +13,7 @@ import pandas as pd
 from utilities.logger import setup_logger
 from src.helpers.kinesis import KinesisConnector
 from src.helpers.s3 import S3BucketConnector
-from src.db_psql_interface import DatabaseInterface
+from src.helpers.db_psql_interface import DatabaseInterface
 from constants.aws_constants import KinesisConstants, S3Constants
 from constants.psql_constants import PsqlRawEvents, PsqlProcessedEvents
 

@@ -1,17 +1,21 @@
 """
-    File: run.py
+    File: run_isolated.py
   Author: Ian Featherston
     Date: 03/26/2025 - Largely rewritten on 04/22/2025
     Desc: Runs all of the scripts in the project under one process so that
             the mock data is persistent and can be tested.
+
+            - This version does everything in an isolated environment, running
+                the PostgreSQL server off of 'localhost'.
 """
 from moto import mock_aws
 
 from utilities.logger import setup_logger
-from src.producer_script import Producer
-from src.consumer_script import Consumer
+from src.producer import Producer
+from src.consumer import Consumer
 from src.transformer import Transformer
-from src.db_psql_interface import DatabaseInterface
+from src.helpers.db_psql_interface import DatabaseInterface
+from src.visualizer import DataframeVisualizer
 
 
 @mock_aws
@@ -22,7 +26,7 @@ def main():
     logger = setup_logger()
 
     # 1. [SETUP] Initialize the PostgreSQL database table
-    db = DatabaseInterface()
+    db = DatabaseInterface('localhost')
     db.initialize_database()
 
 
@@ -51,29 +55,38 @@ def main():
     df_events = consumer.get_raw_events_from_s3()
     transformer = Transformer(db)
 
-    # Combine all tables into one based on common columns
-    df_all_tables = transformer.merge_all_tables(df_events)
-
     # Clean the raw_events data
-    cleaned_tables = transformer.clean_events(df_all_tables)
+    cleaned_tables = transformer.clean_events(df_events)
 
-    # 4B. [PROCESS] Store the cleaned events dataframe in PostgreSQL
+    # 4B. [STORE] Store the cleaned events in the 'proccessed_events' table
     consumer.store_processed_events(cleaned_tables)
 
 
-    # Report 1: Report on each Company's stats regarding auctions & events.
-    report_company_stats = transformer.report_company_stats(cleaned_tables)
-    print(report_company_stats)
+    # 5. [REPORT] Generate various reports and plot them using Matplotlib
+    visualize = DataframeVisualizer()
 
-    # Report 2: Report on which devices companies see more interaction with.
-    report_device_metrics = transformer.report_device_metrics(df_all_tables)
-    print(report_device_metrics)
+    # Combine all tables into one based on common columns
+    df_all_tables = transformer.merge_all_tables(df_events)
 
-    # Report 3: Report on which interaction types each company sees the most of
-    report_interaction_metrics = transformer.report_interaction_metrics(df_all_tables)
-    print(report_interaction_metrics)
+    # Report 1: Our Total Revenue over time from Auction bids
+    report_revenue = transformer.report_revenue(df_all_tables)
+    figure = visualize.plot_revenue_over_time(report_revenue)
+    visualize.store_report(figure, 'report_revenue-over-time')
+
+    # Report 2: Detailed Statistics for an sample Company
+    sample_company = 'Amazon'
+    report_company = transformer.report_company_stats(df_all_tables,
+                                                      sample_company)
+    print(report_company)
+    figure = visualize.plot_company_stats(report_company, sample_company)
+    visualize.store_report(figure, 'report_company-stats-' + sample_company)
+
+    # Show all figures and close them
+    visualize.display_all_figures()
+    visualize.close_all_figures()
 
     db.exit()
+
 
 if __name__ == '__main__':
     main()

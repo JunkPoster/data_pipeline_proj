@@ -57,7 +57,7 @@ class PsqlConnector:
         )
 
         self.logger.info("Connected to PostgreSQL database '%s' at %s:%s",
-                    self.dbname, self.port, self.port)
+                    self.dbname, self.host, self.port)
 
         return conn
 

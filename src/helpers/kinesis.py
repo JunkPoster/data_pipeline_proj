@@ -56,7 +56,8 @@ class KinesisConnector:
             data: The data to push to stream
             key: The Partition Key of the data
         """
-        self.logger.info("Sending data to Kinesis Stream '%s'.", self.stream_name)
+        # Voided for now, but could be used to log the data being sent to Kinesis
+        #self.logger.info("Sending data to Kinesis Stream '%s'.", self.stream_name)
 
         self.kinesis_client.put_record(
             StreamName=self.stream_name,
