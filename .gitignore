@@ -128,7 +128,6 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
 .venv
 env/
 venv/
@@ -174,6 +173,7 @@ cython_debug/
 .pypirc
 
 # Misc
+.vscode/
 misc/
 tempCodeRunnerFile.py
 logs/
