@@ -21,6 +21,8 @@ When using option 1 you should be able to run queries and such within pgAdmin un
 > *Windows*: `psql -U postgres` -> `ALTER USER postgres WITH PASSWORD 'your-password'`.
 > *Linux*: `sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'your-password'`.
 
+### Port Error
+If somehow you get the error regarding the port already being bound, you can change the ports within the `.env` OR closing the PostgreSQL service that's likely running in the background.
 
 # The Dataset
 ## The Base tables
